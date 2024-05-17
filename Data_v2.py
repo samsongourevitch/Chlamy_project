@@ -2,7 +2,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from Genes_self_similarity import get_mean_intra_distance_for_genes, get_mean_var_WT, apply_flagging, apply_flagging_2
+import Genes_self_similarity_v2
 from Model_checks import simulate_gaussian_vectors
+from scipy.ndimage import gaussian_filter1d
+from Feature_engineering import kernel_smooth
 
 def get_format_data() :
     data = pd.read_parquet('database_4-24-24.parquet')
@@ -13,8 +16,6 @@ def get_format_data() :
 
     # replace the rows that have 'mutated_genes' == '' and 'mutant_ID' != 'WT' by 'mutated_genes' == 'special_mutant'
     data.loc[(data['mutated_genes'] == '') & (data['mutant_ID'] != 'WT'), 'mutated_genes'] = 'special_mutant'
-
-    data['mutated_genes_light_regime_count'] = data.groupby(['mutated_genes', 'light_regime'])['mutant_ID'].transform('count')
 
     # setting the last y_2 value appart as fv_fm_end
 
@@ -51,6 +52,7 @@ def get_format_data() :
 
 def get_format_data_without_na() :
     data = get_format_data()
+    data = get_split_genes(data)
 
     # Remove the rows that have an anomaly in their number of frames or fv_fm values
     data = data[data['num_frames'] <= 164]
@@ -59,6 +61,8 @@ def get_format_data_without_na() :
     # Remove the rows of data['plate'] == 15 and data['mutant_ID'] == 'WT' and data['well_id'] == 'N03'
     data = data[~((data['plate'] == 15) & (data['mutant_ID'] == 'WT') & (data['well_id'] == 'N03'))]
 
+    data['mutated_genes_light_regime_count'] = data.groupby(['mutated_genes', 'light_regime'])['mutant_ID'].transform('count')
+    
     return data.reset_index(drop=True)
 
 def get_split_genes(data):
@@ -342,3 +346,42 @@ def replace_WT_and_M_by_model(data_norm_ok, cov_matrices) :
             else:
                 data_norm_ok_copy.loc[index, 'y2_1':'y2_' + str(d)] = simulate_gaussian_vectors(n, np.zeros(d), (4/3)*cov_matrices[row['light_regime']])[0]
     return data_norm_ok_copy
+
+def get_norm_data():
+    data = get_format_data_without_na()
+    data_WT = data[data['mutant_ID'] == 'WT']
+    mean_intra_distance_for_WT = Genes_self_similarity_v2.get_mean_intra_distance_for_WT(data_WT)
+    weighted_avg_y2 = (mean_intra_distance_for_WT['mean_intra_gene_distance_y2'] * mean_intra_distance_for_WT['sample_count']).sum() / mean_intra_distance_for_WT['sample_count'].sum()
+    weighted_avg_ynpq = (mean_intra_distance_for_WT['mean_intra_gene_distance_ynpq'] * mean_intra_distance_for_WT['sample_count']).sum() / mean_intra_distance_for_WT['sample_count'].sum()
+    data_flagged = Genes_self_similarity_v2.apply_flagging_WT(data, threshold_distance_y2=2*weighted_avg_y2, threshold_distance_ynpq=2*weighted_avg_ynpq, p=(2/3), threshold_variance = 1)
+    data_norm = normalize_data_additive(data_flagged)
+    return data_norm
+
+def get_norm_flagged_data():
+    data = get_format_data_without_na()
+    data_WT = data[data['mutant_ID'] == 'WT']
+    mean_intra_distance_for_WT = Genes_self_similarity_v2.get_mean_intra_distance_for_WT(data_WT)
+    weighted_avg_y2 = (mean_intra_distance_for_WT['mean_intra_gene_distance_y2'] * mean_intra_distance_for_WT['sample_count']).sum() / mean_intra_distance_for_WT['sample_count'].sum()
+    weighted_avg_ynpq = (mean_intra_distance_for_WT['mean_intra_gene_distance_ynpq'] * mean_intra_distance_for_WT['sample_count']).sum() / mean_intra_distance_for_WT['sample_count'].sum()
+    data_flagged = Genes_self_similarity_v2.apply_flagging_WT(data, threshold_distance_y2=2*weighted_avg_y2, threshold_distance_ynpq=2*weighted_avg_ynpq, p=(2/3), threshold_variance = 1)
+    data_norm = normalize_data_additive(data_flagged)
+    data_norm_flagged = Genes_self_similarity_v2.apply_flagging_mutants(data_norm, threshold_distance_y2=2*weighted_avg_y2, threshold_distance_ynpq=2*weighted_avg_ynpq, p=(2/3), threshold_variance = 1)
+    # rename flag_y2_y into flag_y2 and drop flag_y2_x
+    data_norm_flagged.rename(columns={'flag_y2_y': 'flag_y2'}, inplace=True)
+    data_norm_flagged.rename(columns={'flag_ynpq_y': 'flag_ynpq'}, inplace=True)
+    data_norm_flagged.drop(columns='flag_y2_x', inplace=True)
+    data_norm_flagged.drop(columns='flag_ynpq_x', inplace=True)
+    return data_norm_flagged
+
+def get_smooth_data(data):
+    data_smooth = data.copy()
+    for light in data['light_regime'].unique():
+        data_light = data[data['light_regime'] == light]
+        data_y2 = data_light.filter(like='y2_').dropna(axis=1).values.astype(float)
+        data_y2_smoothed = np.apply_along_axis(kernel_smooth, 1, data_y2, sigma=10)
+        # if light == '20h_HL' or light == '20h_ML' or light == '2h-2h' add 40 Nan values at the end
+        if light == '20h_HL' or light == '20h_ML' or light == '2h-2h':
+            data_y2_smoothed = np.concatenate((data_y2_smoothed, np.full((data_y2_smoothed.shape[0], 40), np.nan)), axis=1)
+        
+        data_smooth.loc[data['light_regime'] == light, data.filter(like='y2_').columns] = data_y2_smoothed 
+    return data_smooth
