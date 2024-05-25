@@ -1,11 +1,10 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from Genes_self_similarity import get_mean_intra_distance_for_genes, get_mean_var_WT, apply_flagging, apply_flagging_2
 import Genes_self_similarity_v2
 from Model_checks import simulate_gaussian_vectors
 from scipy.ndimage import gaussian_filter1d
-from Feature_engineering import kernel_smooth
+from Feature_engineering import kernel_smooth, local_smooth
 
 def get_format_data() :
     data = pd.read_parquet('database_4-24-24.parquet')
@@ -373,12 +372,15 @@ def get_norm_flagged_data():
     data_norm_flagged.drop(columns='flag_ynpq_x', inplace=True)
     return data_norm_flagged
 
-def get_smooth_data(data):
+def get_smooth_data(data, method='local'):
     data_smooth = data.copy()
     for light in data['light_regime'].unique():
         data_light = data[data['light_regime'] == light]
         data_y2 = data_light.filter(like='y2_').dropna(axis=1).values.astype(float)
-        data_y2_smoothed = np.apply_along_axis(kernel_smooth, 1, data_y2, sigma=10)
+        if method == 'local' :
+             data_y2_smoothed = np.apply_along_axis(local_smooth, 1, data_y2, d=1, sigma=10)
+        elif method == 'kernel' :
+            data_y2_smoothed = np.apply_along_axis(kernel_smooth, 1, data_y2, sigma=10)
         # if light == '20h_HL' or light == '20h_ML' or light == '2h-2h' add 40 Nan values at the end
         if light == '20h_HL' or light == '20h_ML' or light == '2h-2h':
             data_y2_smoothed = np.concatenate((data_y2_smoothed, np.full((data_y2_smoothed.shape[0], 40), np.nan)), axis=1)

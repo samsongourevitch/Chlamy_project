@@ -14,14 +14,15 @@ from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import PolynomialFeatures
 from tqdm import tqdm
+from localreg import *
 
 def extract_features(data):
     features = []  # Initialize list to store extracted features
     
     for i in tqdm(range(len(data))):
         row = data.iloc[i]
-        time_series_y2 = row.filter(like='y2_').dropna().values.astype(float)
-        time_series_ynpq = row.filter(like='ynpq_').dropna().values.astype(float)
+        time_series_y2 = row.filter(regex=r'^y2_\d+$').dropna().values.astype(float)
+        time_series_ynpq = row.filter(regex=r'^ynpq_\d+$').dropna().values.astype(float)
 
         # Compute statistical features
         std_deviation_y2 = np.std(time_series_y2)
@@ -47,10 +48,10 @@ def extract_features(data):
         linear_coef_ynpq = coefficients_ynpq[0]
         quadratic_coef_ynpq = coefficients_ynpq[1] if len(coefficients_ynpq) > 1 else 0.0
 
-        smooth_y2 = kernel_smooth(time_series_y2, sigma=8)
+        smooth_y2 = local_smooth(time_series_y2, d=1, sigma=10)
         derivative_y2 = np.gradient(smooth_y2)
 
-        smooth_ynpq = kernel_smooth(time_series_ynpq, sigma=8)
+        smooth_ynpq = local_smooth(time_series_ynpq, d=1, sigma=10)
         derivative_ynpq = np.gradient(smooth_ynpq)
 
         abs_var_y2 = np.sum(np.abs(derivative_y2))
@@ -141,3 +142,8 @@ def detect_change_points(time_series, model,  pen):
 def kernel_smooth(data, sigma=8.0):
     smoothed_data = gaussian_filter1d(data, sigma)
     return smoothed_data
+
+    
+def local_smooth(data, d, sigma):
+    x = np.arange(len(data))
+    return localreg(x, data, degree=d, kernel=rbf.gaussian, radius=sigma)

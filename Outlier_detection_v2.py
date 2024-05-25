@@ -8,6 +8,7 @@ from scipy.stats import multivariate_normal
 from scipy.special import comb
 from scipy.special import erf
 import scipy
+import scipy.stats as stats
 
 def folded_normal_cdf(x, mu, sigma_squared):
     # CDF of folded normal distribution with mean mu and variance sigma_squared
@@ -629,4 +630,14 @@ def detect_outliers_fv_fm_ynpq_end(data, alpha):
         data_light['outlier_ynpqend'] = np.where(np.abs(data_light['ynpqend']) > quantile*std_ynpqend, True, False)
         data.loc[data['light_regime'] == light, 'outlier_fv_fm_end'] = data_light['outlier_fv_fm_end']
         data.loc[data['light_regime'] == light, 'outlier_ynpqend'] = data_light['outlier_ynpqend']
+
+def detect_outliers_abs_var_y2(data, alpha):
+    for light in data['light_regime'].unique():
+        data_light = data[data['light_regime'] == light]
+        abs_var_y2_WT = data_light[(data_light['mutant_ID'] == 'WT') & (data_light['flag_y2'] == 'ok')]['abs_var_y2'].values
+        shape_ln, loc_ln, scale_ln = stats.lognorm.fit(abs_var_y2_WT)
+        # get the quantile of the 95th percentile of the lognormal distribution with the estimated parameters
+        quantile = stats.lognorm.ppf(1 - alpha, shape_ln, loc_ln, scale_ln)
+        data_light['outlier_abs_var_y2'] = np.where(data_light['abs_var_y2'] > quantile, True, False)
+        data.loc[data['light_regime'] == light, 'outlier_abs_var_y2'] = data_light['outlier_abs_var_y2']
 
