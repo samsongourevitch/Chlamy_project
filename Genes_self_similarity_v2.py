@@ -18,11 +18,11 @@ def get_variance_for_genes(data) :
     for name, group in grouped:
         # Calculate the variance for each 'y2_i' column within the group
         if name[1] == '20h_ML' or name[1] == '20h_HL' or name[1] == '2h-2h':
-            group_variances_y2 = group.filter(like='y2_').iloc[:, :40].values.var(axis=0)
-            group_variances_ynpq = group.filter(like='ynpq_').iloc[:, :40].values.var(axis=0)
+            group_variances_y2 = group.filter(regex=r'^y2_\d+$').iloc[:, :40].values.var(axis=0)
+            group_variances_ynpq = group.filter(regex=r'^ynpq_\d+$').iloc[:, :40].values.var(axis=0)
         else :
-            group_variances_y2 = group.filter(like='y2_').values.var(axis=0)
-            group_variances_ynpq = group.filter(like='ynpq_').values.var(axis=0)
+            group_variances_y2 = group.filter(regex=r'^y2_\d+$').values.var(axis=0)
+            group_variances_ynpq = group.filter(regex=r'^ynpq_\d+$').values.var(axis=0)
         if len(group) > 1 :
             # Compute the mean variance across all 'y2_i' columns for the gene within the light regime
             mean_variance = group_variances.mean()
@@ -284,3 +284,33 @@ def apply_flagging_2(data, alpha = 0.05, threshold_variance = 1):
     data_copy = data.merge(flagged_series, left_index=True, right_index=True, how='left')
 
     return data_copy
+
+def calculate_shape_distances(group):
+    y2_values = group.filter(regex=r'^y2_\d+$').dropna(axis=1).values
+    y2_derivatives = np.gradient(y2_values, axis=1)
+    ynpq_values = group.filter(regex=r'^ynpq_\d+$').dropna(axis=1).values
+    ynpq_derivatives = np.gradient(ynpq_values, axis=1)
+    distances_shape_y2 = pdist(y2_derivatives, metric=distance_metric)
+    distances_shape_ynpq = pdist(ynpq_derivatives, metric=distance_metric)
+    return squareform(distances_shape_y2), squareform(distances_shape_ynpq)
+
+def flag_time_series_shape_mutant(group, name, threshold_distance_y2, threshold_distance_ynpq, p=(2/3), threshold_variance = 1):
+    distances_shape_y2, distances_shape_ynpq = calculate_shape_distances(group)
+    num_series = len(group)
+    ok_indices_y2 = []
+    ok_indices_ynpq = []
+    flags_y2 = group['flag_shape_y2'].values
+    flags_ynpq = group['flag_shape_ynpq'].values
+    if name[0] != '' :
+        for i in range(num_series):
+            close_count_y2 = sum(1 for d in distances_shape_y2[i] if d < threshold_distance_y2)
+            close_count_ynpq = sum(1 for d in distances_shape_ynpq[i] if d < threshold_distance_ynpq)
+            if close_count_y2 >= p*num_series:
+                ok_indices_y2.append(i)
+            if close_count_ynpq >= p*num_series:
+                ok_indices_ynpq.append(i)
+
+        flags_y2 = [False if i in ok_indices_y2 else True for i in range(num_series)]
+        flags_ynpq = [False if i in ok_indices_ynpq else True for i in range(num_series)]
+
+    return pd.DataFrame(flags_y2, index=group.index, columns=['flag_shape_y2']), pd.DataFrame(flags_ynpq, index=group.index, columns=['flag_shape_ynpq'])

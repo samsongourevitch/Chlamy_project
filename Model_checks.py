@@ -12,6 +12,7 @@ from pingouin import multivariate_normality
 from scipy.stats import kstest
 from scipy.spatial.distance import pdist, squareform
 import scipy
+import scipy.stats as stats
 
 def plot_y2_normalized_distribution(data) :
     data_y2 = data.filter(like='y2_').dropna(axis=1).values
@@ -23,6 +24,24 @@ def plot_y2_normalized_distribution(data) :
         ax.hist(data_y2[:, i], bins=20, density=True, alpha=0.6, color='b')
         x = np.linspace(data_y2[:, i].min(), data_y2[:, i].max(), 100)
         y = multivariate_normal.pdf(x, mean=np.mean(data_y2[:, i]), cov=np.cov(data_y2[:, i]))
+        ax.plot(x, y, 'r--')
+        ax.set_title('Time point ' + str(i))
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_y2_student_distribution(data) :
+    data_y2 = data.filter(like='y2_').dropna(axis=1).values
+
+    # Check if the distribution is Gaussian for each time point and plot the associated gaussian distribution
+    fig, axes = plt.subplots(8, len(data_y2[0])//8, figsize=(15, 20))  # Create a 8x5 grid of subplots
+
+    for i, ax in enumerate(axes.flatten()):
+        df, loc, scale = stats.t.fit(data_y2[:, i])
+        t_dist = stats.t(df=df, loc=loc, scale=scale)
+        ax.hist(data_y2[:, i], bins=20, density=True, alpha=0.6, color='b')
+        x = np.linspace(data_y2[:, i].min(), data_y2[:, i].max(), 100)
+        y = t_dist.pdf(x)
         ax.plot(x, y, 'r--')
         ax.set_title('Time point ' + str(i))
 
@@ -69,6 +88,22 @@ def normal_test(data) :
         ks_test = kstest(data_y2[column], 'norm', args=(np.mean(data_y2[column]), np.std(data_y2[column])))
         statistic, p_value = ks_test.statistic, ks_test.pvalue
         normality_test[column] = [statistic, p_value]
+
+    # print('Are the time points normally distributed?', 'Yes' if (normality_test.loc['p-value'] > 0.05).all() else 'No')
+
+    return normality_test
+
+def student_test(data) :
+    data_y2 = data.filter(like='y2_').dropna(axis=1)
+    # make the data into a probability distribution by making it sum to 1
+
+    # Perform the normality test for each time point
+    normality_test = pd.DataFrame(index=['statistic', 'p-value'], columns=data_y2.columns)
+
+    for column in data_y2.columns:
+        df, loc, scale = stats.t.fit(data_y2[column].values)
+        ks_statistic, p_value = stats.kstest(data_y2[column].values, 't', args=(df, loc, scale))
+        normality_test[column] = [ks_statistic, p_value]
 
     # print('Are the time points normally distributed?', 'Yes' if (normality_test.loc['p-value'] > 0.05).all() else 'No')
 
@@ -245,3 +280,58 @@ def plot_diagonal_reducted_gaussian_vectors(data):
             axes[1].set_title('Reduced (normalized) Y(II) responses in ' + light)
         plt.tight_layout()
         plt.show()
+
+def qqplot(data, law='norm'):
+    mean_data = data.mean()
+    std_data = data.std()
+    np.random.seed(1)
+    n = len(data)
+
+    # Sort data
+    sorted_data = np.sort(data)
+
+    # Compute theoretical quantiles for a normal distribution
+    if law == 'norm':
+        theoretical_quantiles = stats.norm.ppf((np.arange(n) + 0.5) / n, loc=mean_data, scale=std_data)
+    elif law == 't':
+        df, loc, scale = stats.t.fit(data.astype(float))
+        theoretical_quantiles = stats.t.ppf((np.arange(n) + 0.5) / n, df=df, loc=loc, scale=scale)
+
+    # Create Q-Q plot
+    plt.figure(figsize=(8, 6))
+    plt.scatter(theoretical_quantiles, sorted_data, color='blue', alpha=0.6)
+    plt.title('Q-Q Plot against Normal Distribution')
+    plt.xlabel('Theoretical Quantiles')
+    plt.ylabel('Ordered Data Values')
+
+    # Add a line to represent perfect normality (identity line)
+    plt.plot(sorted_data, sorted_data, color='red', linestyle='--')
+    plt.grid(True)
+    plt.show()
+
+# Function to generate synthetic noisy time series
+def generate_noisy_time_series(n_samples=200, num_segments=3, noise_std=1.0):
+    # Define parameters for each segment (slope and intercept)
+    segment_params = []
+    slope = np.zeros(num_segments)
+    for i in range(num_segments):
+        slope[i] = np.random.uniform(-1, 1)  # Random slope between 0.5 and 2.0
+        intercept = np.random.uniform(-5.0, 5.0)  # Random intercept between -5.0 and 5.0
+        segment_params.append((slope, intercept))
+    
+    # Generate synthetic time series data
+    time_series = np.zeros(n_samples + 1)
+    segment_lengths = np.linspace(0, n_samples, num_segments + 1, dtype=int)
+    
+    for i in range(num_segments):
+        start_idx = segment_lengths[i]
+        end_idx = segment_lengths[i + 1]
+        slope, intercept = segment_params[i]
+        x_values = np.arange(start_idx, end_idx)
+        for j in range(len(x_values)):
+            time_series[start_idx + j + 1] = time_series[start_idx + j] + slope[i]
+    
+    # Add Gaussian noise to the time series
+    time_series += np.random.normal(0, noise_std, size=n_samples + 1)
+    
+    return time_series

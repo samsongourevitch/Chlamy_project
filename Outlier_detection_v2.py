@@ -8,6 +8,7 @@ from scipy.stats import multivariate_normal
 from scipy.special import comb
 from scipy.special import erf
 import scipy
+import scipy.stats as stats
 
 def folded_normal_cdf(x, mu, sigma_squared):
     # CDF of folded normal distribution with mean mu and variance sigma_squared
@@ -82,9 +83,9 @@ def test_divergent_end_down(sample_vector, alpha, w, p):
     # check if at the beginning the point are on average not div and at the end they are
     window = w
     if np.sum(div[:window]) < p*window and np.sum(div[-window:]) > p*window :
-        return True
+        return True, -sample_vector[-window:].sum()
     else :
-        return False
+        return False, -sample_vector[-window:].sum()
 
 def test_divergent_end_up(sample_vector, alpha, w, p):
     # Number of dimensions (length of the sample vector)
@@ -97,9 +98,9 @@ def test_divergent_end_up(sample_vector, alpha, w, p):
     # check if at the beginning the point are on average not div and at the end they are
     window = w
     if np.sum(div[:window]) < p*window and np.sum(div[-window:]) > p*window :
-        return True
+        return True, sample_vector[-window:].sum()
     else :
-        return False
+        return False, sample_vector[-window:].sum()
 
 def test_divergent_beg_down(sample_vector, alpha, w, p):
     # Number of dimensions (length of the sample vector)
@@ -112,9 +113,9 @@ def test_divergent_beg_down(sample_vector, alpha, w, p):
     # check if at the beginning the point are on average not div and at the end they are
     window = w
     if np.sum(div[:window]) > p*window and np.sum(div[-window:]) < p*window :
-        return True
+        return True, -sample_vector[:window].sum()
     else :
-        return False
+        return False, -sample_vector[:window].sum()
 
 def test_divergent_beg_up(sample_vector, alpha, w, p):
     # Number of dimensions (length of the sample vector)
@@ -127,9 +128,9 @@ def test_divergent_beg_up(sample_vector, alpha, w, p):
     # check if at the beginning the point are on average not div and at the end they are
     window = w
     if np.sum(div[:window]) > p*window and np.sum(div[-window:]) < p*window :
-        return True
+        return True, sample_vector[:window].sum()
     else :
-        return False
+        return False, sample_vector[:window].sum()
 
 def get_alpha_norm_threshold_WT(data_WT_y2s, alpha):
     norms_WT = []
@@ -553,6 +554,14 @@ def detect_diverging_outliers(data, alpha, w, p, cov_matrices_y2=None, cov_matri
         results_end_up_ynpq = []
         results_end_down_y2 = []
         results_end_down_ynpq = []
+        sums_beg_up_y2 = []
+        sums_beg_up_ynpq = []
+        sums_beg_down_y2 = []
+        sums_beg_down_ynpq = []
+        sums_end_up_y2 = []
+        sums_end_up_ynpq = []
+        sums_end_down_y2 = []
+        sums_end_down_ynpq = []
         for i in range(data_light_y2.shape[0]):
             if data_light.iloc[i]['mutant_ID'] == 'WT' and data_light.iloc[i]['plate'] == 99:
                 sqrt_inv_y2 = (1/np.sqrt(1-1/384))*sqrt_inv_eps_y2
@@ -565,27 +574,70 @@ def detect_diverging_outliers(data, alpha, w, p, cov_matrices_y2=None, cov_matri
                 sqrt_inv_ynpq = np.sqrt(3/4)*sqrt_inv_eps_ynpq
             data_light_y2_norm_std = np.dot(data_light_y2[i], sqrt_inv_y2)
             data_light_ynpq_norm_std = np.dot(data_light_ynpq[i], sqrt_inv_ynpq)
-            result_beg_up_y2 = test_divergent_beg_up(data_light_y2_norm_std, alpha, w, p)
-            result_beg_down_y2 = test_divergent_beg_down(data_light_y2_norm_std, alpha, w, p)
-            result_end_up_y2 = test_divergent_end_up(data_light_y2_norm_std, alpha, w, p)
-            result_end_down_y2 = test_divergent_end_down(data_light_y2_norm_std, alpha, w, p)
+            result_beg_up_y2, sum_beg_up_y2 = test_divergent_beg_up(data_light_y2_norm_std, alpha, w, p)
+            result_beg_down_y2, sum_beg_down_y2 = test_divergent_beg_down(data_light_y2_norm_std, alpha, w, p)
+            result_end_up_y2, sum_end_up_y2 = test_divergent_end_up(data_light_y2_norm_std, alpha, w, p)
+            result_end_down_y2, sum_end_down_y2 = test_divergent_end_down(data_light_y2_norm_std, alpha, w, p)
             results_beg_up_y2.append(result_beg_up_y2)
             results_beg_down_y2.append(result_beg_down_y2)
             results_end_up_y2.append(result_end_up_y2)
             results_end_down_y2.append(result_end_down_y2)
-            result_beg_up_ynpq = test_divergent_beg_up(data_light_ynpq_norm_std, alpha, w, p)
-            result_beg_down_ynpq = test_divergent_beg_down(data_light_ynpq_norm_std, alpha, w, p)
-            result_end_up_ynpq = test_divergent_end_up(data_light_ynpq_norm_std, alpha, w, p)
-            result_end_down_ynpq = test_divergent_end_down(data_light_ynpq_norm_std, alpha, w, p)
+            sums_beg_up_y2.append(sum_beg_up_y2)
+            sums_beg_down_y2.append(sum_beg_down_y2)
+            sums_end_up_y2.append(sum_end_up_y2)
+            sums_end_down_y2.append(sum_end_down_y2)
+            result_beg_up_ynpq, sum_beg_up_ynpq = test_divergent_beg_up(data_light_ynpq_norm_std, alpha, w, p)
+            result_beg_down_ynpq, sum_beg_down_ynpq = test_divergent_beg_down(data_light_ynpq_norm_std, alpha, w, p)
+            result_end_up_ynpq, sum_end_up_ynpq = test_divergent_end_up(data_light_ynpq_norm_std, alpha, w, p)
+            result_end_down_ynpq, sum_end_down_ynpq = test_divergent_end_down(data_light_ynpq_norm_std, alpha, w, p)
             results_beg_up_ynpq.append(result_beg_up_ynpq)
             results_beg_down_ynpq.append(result_beg_down_ynpq)
             results_end_up_ynpq.append(result_end_up_ynpq)
             results_end_down_ynpq.append(result_end_down_ynpq)
+            sums_beg_up_ynpq.append(sum_beg_up_ynpq)
+            sums_beg_down_ynpq.append(sum_beg_down_ynpq)
+            sums_end_up_ynpq.append(sum_end_up_ynpq)
+            sums_end_down_ynpq.append(sum_end_down_ynpq)
         data.loc[data['light_regime'] == light, 'outlier_divergent_beg_up_y2'] = results_beg_up_y2
+        data.loc[data['light_regime'] == light, 'sum_beg_up_y2'] = sums_beg_up_y2
         data.loc[data['light_regime'] == light, 'outlier_divergent_beg_down_y2'] = results_beg_down_y2
+        data.loc[data['light_regime'] == light, 'sum_beg_down_y2'] = sums_beg_down_y2
         data.loc[data['light_regime'] == light, 'outlier_divergent_end_up_y2'] = results_end_up_y2
+        data.loc[data['light_regime'] == light, 'sum_end_up_y2'] = sums_end_up_y2
         data.loc[data['light_regime'] == light, 'outlier_divergent_end_down_y2'] = results_end_down_y2
+        data.loc[data['light_regime'] == light, 'sum_end_down_y2'] = sums_end_down_y2
         data.loc[data['light_regime'] == light, 'outlier_divergent_beg_up_ynpq'] = results_beg_up_ynpq
+        data.loc[data['light_regime'] == light, 'sum_beg_up_ynpq'] = sums_beg_up_ynpq
         data.loc[data['light_regime'] == light, 'outlier_divergent_beg_down_ynpq'] = results_beg_down_ynpq
+        data.loc[data['light_regime'] == light, 'sum_beg_down_ynpq'] = sums_beg_down_ynpq
         data.loc[data['light_regime'] == light, 'outlier_divergent_end_up_ynpq'] = results_end_up_ynpq
+        data.loc[data['light_regime'] == light, 'sum_end_up_ynpq'] = sums_end_up_ynpq
         data.loc[data['light_regime'] == light, 'outlier_divergent_end_down_ynpq'] = results_end_down_ynpq
+        data.loc[data['light_regime'] == light, 'sum_end_down_ynpq'] = sums_end_down_ynpq
+
+def detect_outliers_fv_fm_ynpq_end(data, alpha):
+    fv_fm = data[(data['mutant_ID'] == 'WT') & (data['flag_y2'] == 'ok')]['fv_fm'].values
+    std_fv_fm = np.std(fv_fm)
+    quantile = scipy.stats.norm.ppf(1 - alpha/2)
+    data['outlier_fv_fm'] = np.where(np.abs(data['fv_fm']) > quantile*std_fv_fm, True, False)
+    for light in data['light_regime'].unique():
+        data_light = data[data['light_regime'] == light]
+        fv_fm_end = data_light[(data_light['mutant_ID'] == 'WT') & (data_light['flag_y2'] == 'ok')]['fv_fm_end'].values
+        ynpqend = data_light[(data_light['mutant_ID'] == 'WT') & (data_light['flag_ynpq'] == 'ok')]['ynpqend'].values
+        std_fv_fm_end = np.std(fv_fm_end)
+        std_ynpqend = np.std(ynpqend)
+        data_light['outlier_fv_fm_end'] = np.where(np.abs(data_light['fv_fm_end']) > quantile*std_fv_fm_end, True, False)
+        data_light['outlier_ynpqend'] = np.where(np.abs(data_light['ynpqend']) > quantile*std_ynpqend, True, False)
+        data.loc[data['light_regime'] == light, 'outlier_fv_fm_end'] = data_light['outlier_fv_fm_end']
+        data.loc[data['light_regime'] == light, 'outlier_ynpqend'] = data_light['outlier_ynpqend']
+
+def detect_outliers_abs_var_y2(data, alpha):
+    for light in data['light_regime'].unique():
+        data_light = data[data['light_regime'] == light]
+        abs_var_y2_WT = data_light[(data_light['mutant_ID'] == 'WT') & (data_light['flag_y2'] == 'ok')]['abs_var_y2'].values
+        shape_ln, loc_ln, scale_ln = stats.lognorm.fit(abs_var_y2_WT)
+        # get the quantile of the 95th percentile of the lognormal distribution with the estimated parameters
+        quantile = stats.lognorm.ppf(1 - alpha, shape_ln, loc_ln, scale_ln)
+        data_light['outlier_abs_var_y2'] = np.where(data_light['abs_var_y2'] > quantile, True, False)
+        data.loc[data['light_regime'] == light, 'outlier_abs_var_y2'] = data_light['outlier_abs_var_y2']
+

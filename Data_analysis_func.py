@@ -8,19 +8,19 @@ import itertools
 from datetime import datetime, timedelta
 from matplotlib.dates import DateFormatter
 
-def plot_y2(data):
-    data_y2 = data.filter(like='y2_').dropna(axis=1).values
+def plot_y2(data, title='Y(II) Response for Each Mutant'):
+    data_y2 = data.filter(regex=r'^y2_\d+$').dropna(axis=1).values
 
     for y2 in data_y2:
         plt.plot(y2)
 
     plt.xlabel('Time')
     plt.ylabel('Y(II) Response')
-    plt.title('Y(II) Response for Each Mutant')
+    plt.title(title)
     plt.show()
 
 def plot_ynpq(data):
-    data_ynpq = data.filter(like='npq_').dropna(axis=1).values
+    data_ynpq = data.filter(regex=r'^ynpq_\d+$').dropna(axis=1).values
 
     for ynpq in data_ynpq:
         plt.plot(ynpq)
